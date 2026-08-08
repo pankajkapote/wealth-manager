@@ -1,5 +1,4 @@
 -- Wealth Manager Database Schema
--- Copy this entire file to Supabase SQL Editor and run
 
 -- Users/Family Members
 CREATE TABLE family_members (
@@ -191,21 +190,3 @@ CREATE POLICY "Users can view their family members" ON family_members
 
 CREATE POLICY "Users can manage their family members" ON family_members
   FOR ALL USING (user_id = auth.uid());
-
--- Insert sample data (optional - remove if you want empty database)
--- This is commented out - uncomment if you want to start with sample data
-
--- INSERT INTO family_members (user_id, name, email, phone, role)
--- VALUES 
---   (auth.uid(), 'Pankaj Kapote', 'pankaj@example.com', '+919876543210', 'owner'),
---   (auth.uid(), 'Manjiri Kapote', 'manjiri@example.com', '+919876543211', 'spouse');
-
--- Verification query - run this to confirm tables are created
-SELECT 
-  table_name 
-FROM 
-  information_schema.tables 
-WHERE 
-  table_schema = 'public' 
-ORDER BY 
-  table_name;
