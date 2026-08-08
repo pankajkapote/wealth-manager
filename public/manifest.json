@@ -1,0 +1,93 @@
+{
+  "name": "Personal AI Wealth Manager",
+  "short_name": "Wealth Manager",
+  "description": "Your personal investment analyst powered by AI. Get actionable insights, not noise.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#ffffff",
+  "theme_color": "#1e40af",
+  "categories": ["finance", "productivity"],
+  "icons": [
+    {
+      "src": "/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-maskable-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon-maskable-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/screenshot-1.png",
+      "sizes": "540x720",
+      "type": "image/png",
+      "form_factor": "narrow"
+    },
+    {
+      "src": "/screenshot-2.png",
+      "sizes": "1024x600",
+      "type": "image/png",
+      "form_factor": "wide"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Portfolio Health",
+      "short_name": "Health",
+      "description": "Check your portfolio health score",
+      "url": "/dashboard?view=health",
+      "icons": [
+        {
+          "src": "/shortcut-health.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Capital Advisor",
+      "short_name": "Allocate",
+      "description": "Get monthly capital allocation plan",
+      "url": "/dashboard?view=allocate",
+      "icons": [
+        {
+          "src": "/shortcut-allocate.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Sell Alerts",
+      "short_name": "Sell",
+      "description": "Review sell recommendations",
+      "url": "/dashboard?view=sell",
+      "icons": [
+        {
+          "src": "/shortcut-sell.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    }
+  ]
+}
