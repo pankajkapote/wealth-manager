@@ -4,7 +4,7 @@ import React from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { CheckCircle } from 'lucide-react';
 import { usePortfolioData } from '@/lib/usePortfolioData';
-import PortfolioOnboarding from './PortfolioOnboarding';
+import PortfolioManager from './PortfolioManager';
 
 const CHART_COLORS = ['#1e40af', '#0f172a', '#475569', '#3b82f6', '#64748b'];
 
@@ -22,7 +22,12 @@ export default function PortfolioHealth() {
 
   if (isEmpty && familyMemberId) {
     return (
-      <PortfolioOnboarding familyMemberId={familyMemberId} onComplete={refresh} />
+      <PortfolioManager
+        familyMemberId={familyMemberId}
+        stocks={stocks}
+        mfs={mfs}
+        onComplete={refresh}
+      />
     );
   }
 

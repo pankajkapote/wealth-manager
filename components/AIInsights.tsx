@@ -3,7 +3,7 @@
 import React, { useState, useMemo } from 'react';
 import { Zap, MessageSquare } from 'lucide-react';
 import { usePortfolioData } from '@/lib/usePortfolioData';
-import PortfolioOnboarding from './PortfolioOnboarding';
+import PortfolioManager from './PortfolioManager';
 
 interface DerivedInsight {
   id: string;
@@ -13,7 +13,7 @@ interface DerivedInsight {
 }
 
 export default function AIInsights() {
-  const { familyMemberId, stocks, summary, loading, isEmpty, refresh } =
+  const { familyMemberId, stocks, mfs, summary, loading, isEmpty, refresh } =
     usePortfolioData();
   const [aiChat, setAiChat] = useState<Array<{ role: string; text: string }>>([]);
   const [userInput, setUserInput] = useState('');
@@ -129,7 +129,12 @@ export default function AIInsights() {
 
   if (isEmpty && familyMemberId) {
     return (
-      <PortfolioOnboarding familyMemberId={familyMemberId} onComplete={refresh} />
+      <PortfolioManager
+        familyMemberId={familyMemberId}
+        stocks={stocks}
+        mfs={mfs}
+        onComplete={refresh}
+      />
     );
   }
 

@@ -4,12 +4,13 @@ import React, { useState } from 'react';
 import { TrendingUp, TrendingDown, ChevronDown, Trash2 } from 'lucide-react';
 import { usePortfolioData } from '@/lib/usePortfolioData';
 import { deleteStockHolding, deleteMFHolding } from '@/lib/portfolio';
-import PortfolioOnboarding from './PortfolioOnboarding';
+import PortfolioManager from './PortfolioManager';
 
 export default function HoldingsOverview() {
   const { familyMemberId, stocks, mfs, summary, loading, isEmpty, refresh } =
     usePortfolioData();
   const [expandedCategory, setExpandedCategory] = useState('stocks');
+  const [showManager, setShowManager] = useState(false);
 
   if (loading) {
     return (
@@ -21,15 +22,44 @@ export default function HoldingsOverview() {
 
   if (isEmpty && familyMemberId) {
     return (
-      <PortfolioOnboarding familyMemberId={familyMemberId} onComplete={refresh} />
+      <PortfolioManager
+        familyMemberId={familyMemberId}
+        stocks={stocks}
+        mfs={mfs}
+        onComplete={refresh}
+      />
     );
   }
 
   const totalStockValue = stocks.reduce((s, x) => s + (x.value_at_market || 0), 0);
   const totalMFValue = mfs.reduce((s, x) => s + (x.current_value || 0), 0);
 
+  if (showManager) {
+    return (
+      <PortfolioManager
+        familyMemberId={familyMemberId!}
+        stocks={stocks}
+        mfs={mfs}
+        onComplete={() => {
+          setShowManager(false);
+          refresh();
+        }}
+      />
+    );
+  }
+
   return (
     <div className="space-y-6">
+      {/* Add/Manage Button */}
+      <div className="flex justify-end">
+        <button
+          onClick={() => setShowManager(true)}
+          className="btn-secondary text-xs flex items-center gap-2"
+        >
+          + Add or Edit Holdings
+        </button>
+      </div>
+
       {/* Stocks Section */}
       {stocks.length > 0 && (
         <div className="glass-dark rounded-lg overflow-hidden">
