@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { LogOut, Settings, Bell, MessageCircle, Loader2, X } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/lib/useAuth';
+import { useEffect } from 'react'; 
 
 interface NavigationProps {
   selectedView: string;
