@@ -31,12 +31,11 @@ interface PortfolioManagerProps {
 type ViewMode = 'choose' | 'upload' | 'manual' | 'edit-holdings';
 
 /**
- * Portfolio upload manager supporting:
- * - CSV files (stocks or MF)
- * - XLS files (which are actually HTML tables from Excel export)
- * - Manual single-entry form
- * - Edit existing holdings (inline)
- * - Delete with confirmation
+ * Improved portfolio upload manager supporting:
+ * - CSV files with flexible column name matching (handles spaces, case-insensitive)
+ * - XLS files (tab-separated and HTML tables)
+ * - Smart detection: Stocks vs MF based on available columns
+ * - Works with Kuvera, broker statements, and manual CSVs
  */
 export default function PortfolioManager({
   familyMemberId,
@@ -45,7 +44,6 @@ export default function PortfolioManager({
   onComplete,
 }: PortfolioManagerProps) {
   const [mode, setMode] = useState<ViewMode>('choose');
-  const [uploadType, setUploadType] = useState<'stocks' | 'mf' | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadSuccess, setUploadSuccess] = useState<number | null>(null);
@@ -68,11 +66,6 @@ export default function PortfolioManager({
   const [savingManual, setSavingManual] = useState(false);
   const [manualError, setManualError] = useState<string | null>(null);
 
-  // Edit mode
-  const [editingStock, setEditingStock] = useState<any | null>(null);
-  const [editingMF, setEditingMF] = useState<any | null>(null);
-  const [editError, setEditError] = useState<string | null>(null);
-
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleDownloadTemplate = (type: 'stocks' | 'mf') => {
@@ -83,7 +76,23 @@ export default function PortfolioManager({
     a.click();
   };
 
-  // Parse both CSV and XLS (HTML table) formats
+  /**
+   * Flexible column finder: given column name variants, finds the column
+   * from a data row, handling spaces and case-insensitivity
+   */
+  const findColumn = (row: Record<string, string>, variants: string[]): string => {
+    const keys = Object.keys(row);
+    for (const variant of variants) {
+      const found = keys.find((k) => {
+        const kClean = k.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+        const vClean = variant.toLowerCase().replace(/[^a-z0-9]/g, '');
+        return kClean.includes(vClean) || vClean.includes(kClean.split(/[^a-z0-9]/)[0]);
+      });
+      if (found) return row[found]?.toString().trim() || '';
+    }
+    return '';
+  };
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -95,12 +104,23 @@ export default function PortfolioManager({
     const isXLS = file.name.endsWith('.xls') || file.name.endsWith('.xlsx');
 
     if (isXLS) {
-      // XLS files from Excel are HTML tables
       const reader = new FileReader();
       reader.onload = async (evt) => {
         try {
-          const html = evt.target?.result as string;
-          const rows = parseHTMLTable(html);
+          const content = evt.target?.result as string;
+
+          // Try HTML table parsing first (for Excel exports)
+          let rows = parseHTMLTable(content);
+
+          // If no HTML table found, try tab-separated format
+          if (rows.length === 0) {
+            rows = parseTabSeparated(content);
+          }
+
+          if (rows.length === 0) {
+            throw new Error('Could not parse XLS file. Try CSV format instead.');
+          }
+
           await processUploadedRows(rows);
         } catch (err: any) {
           setUploadError(err.message || 'Failed to parse XLS file');
@@ -118,6 +138,8 @@ export default function PortfolioManager({
       Papa.parse(file, {
         header: true,
         skipEmptyLines: true,
+        transformHeader: (h) => h.trim(),
+        transform: (v) => (typeof v === 'string' ? v.trim() : v),
         complete: async (results) => {
           try {
             await processUploadedRows(results.data as Record<string, string>[]);
@@ -135,114 +157,134 @@ export default function PortfolioManager({
     }
   };
 
-  const parseHTMLTable = (html: string): Record<string, string>[] => {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(html, 'text/html');
+  const parseTabSeparated = (content: string): Record<string, string>[] => {
+    const lines = content.split('\n');
+    if (lines.length < 2) return [];
+
+    const headerLine = lines[0];
+    if (!headerLine.includes('\t')) return [];
+
+    const headers = headerLine.split('\t').map((h) => h.trim());
     const rows: Record<string, string>[] = [];
 
-    const table = doc.querySelector('table');
-    if (!table) throw new Error('No table found in XLS file');
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
 
-    const headerRow = table.querySelector('tr');
-    if (!headerRow) throw new Error('No header row found');
-
-    const headers = Array.from(headerRow.querySelectorAll('th, td')).map((cell) =>
-      cell.textContent?.trim().toLowerCase().replace(/\s+/g, '_') || ''
-    );
-
-    const tbody = table.querySelector('tbody') || table;
-    tbody.querySelectorAll('tr').forEach((row, idx) => {
-      if (idx === 0 && !table.querySelector('tbody')) return; // skip header if no tbody
-      const cells = Array.from(row.querySelectorAll('td'));
-      if (cells.length === 0) return;
-
-      const rowData: Record<string, string> = {};
-      headers.forEach((header, cellIdx) => {
-        rowData[header] = cells[cellIdx]?.textContent?.trim() || '';
+      const cells = line.split('\t').map((c) => c.trim());
+      const row: Record<string, string> = {};
+      headers.forEach((header, idx) => {
+        row[header] = cells[idx] || '';
       });
-      if (Object.values(rowData).some((v) => v)) rows.push(rowData);
-    });
+      rows.push(row);
+    }
 
     return rows;
   };
 
-  const processUploadedRows = async (rows: Record<string, string>[]) => {
-    // Detect whether this is stocks or MF based on column names
-    const isStockData = rows.some((row) =>
-      Object.keys(row).some((k) => k.includes('symbol'))
-    );
-    const isMFData = rows.some((row) =>
-      Object.keys(row).some((k) => k.includes('fund') || k.includes('units'))
-    );
+  const parseHTMLTable = (html: string): Record<string, string>[] => {
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, 'text/html');
+      const rows: Record<string, string>[] = [];
 
-    if (!isStockData && !isMFData) {
+      const tables = doc.querySelectorAll('table');
+      if (tables.length === 0) return [];
+
+      for (const table of tables) {
+        const headerRow = table.querySelector('tr');
+        if (!headerRow) continue;
+
+        const headers = Array.from(headerRow.querySelectorAll('th, td')).map(
+          (cell) => cell.textContent?.trim() || ''
+        );
+
+        const tbody = table.querySelector('tbody') || table;
+        tbody.querySelectorAll('tr').forEach((row, idx) => {
+          if (idx === 0 && !table.querySelector('tbody')) return;
+          const cells = Array.from(row.querySelectorAll('td'));
+          if (cells.length === 0) return;
+
+          const rowData: Record<string, string> = {};
+          headers.forEach((header, cellIdx) => {
+            if (header) {
+              rowData[header] = cells[cellIdx]?.textContent?.trim() || '';
+            }
+          });
+          if (Object.values(rowData).some((v) => v)) rows.push(rowData);
+        });
+      }
+
+      return rows;
+    } catch {
+      return [];
+    }
+  };
+
+  const processUploadedRows = async (rows: Record<string, string>[]) => {
+    if (rows.length === 0) {
+      throw new Error('No data rows found in file');
+    }
+
+    const normalized: (NewStockHoldingInput | NewMFHoldingInput)[] = [];
+
+    for (const row of rows) {
+      // Flexible column detection using keywords
+      const symbol = findColumn(row, ['symbol', 'scripcode', 'stock symbol']);
+      const fundName = findColumn(row, ['schemename', 'fund', 'fundname', 'name of the fund']);
+      const quantity = findColumn(row, ['qty', 'quantity', 'netunits', 'units']);
+      const avgCost = findColumn(row, ['avgcost', 'cost', 'average', 'averagecost', 'average cost price']);
+      const currentPrice = findColumn(row, ['currentprice', 'price', 'market', 'navrate', 'current market price']);
+      const investmentValue = findColumn(row, ['amount', 'investmentvalue', 'invested', 'cost value']);
+      const currentValue = findColumn(row, ['currentvalue', 'current value', 'navrate']);
+      const companyName = findColumn(row, ['name', 'company', 'companyname']);
+
+      // Decide: is this a stock or MF row?
+      const isStock = symbol && (avgCost || currentPrice);
+      const isMF = fundName && (investmentValue || currentValue) && quantity;
+
+      if (isStock && !isMF) {
+        const q = parseFloat(quantity || '1');
+        const cp = parseFloat(avgCost || '0');
+        const curp = parseFloat(currentPrice || cp.toString());
+
+        if (!symbol || !q || !cp) continue;
+
+        normalized.push({
+          family_member_id: familyMemberId,
+          symbol: symbol.toUpperCase(),
+          company_name: companyName || symbol,
+          quantity: q,
+          avg_cost_price: cp,
+          current_price: curp || cp,
+        } as NewStockHoldingInput);
+      } else if (isMF) {
+        const q = parseFloat(quantity || '0');
+        const cv = parseFloat(currentValue || '0');
+        const iv = parseFloat(investmentValue || '0');
+        const nav = parseFloat(findColumn(row, ['nav', 'navrate']) || '0');
+
+        if (!fundName || (!iv && !cv)) continue;
+
+        normalized.push({
+          family_member_id: familyMemberId,
+          fund_name: fundName,
+          units: q > 0 ? q : undefined,
+          nav: nav > 0 ? nav : undefined,
+          current_nav: nav > 0 ? nav : undefined,
+          cost_value: iv > 0 ? iv : 0,
+          current_value: cv > 0 ? cv : iv,
+        } as NewMFHoldingInput);
+      }
+    }
+
+    if (normalized.length === 0) {
       throw new Error(
-        'Could not detect data type. Expected "symbol" column for stocks or "fund_name"/"units" for MF.'
+        'No valid holdings found. Check file format. Required: stocks (symbol + qty + cost) or MF (fundname + invested amount)'
       );
     }
 
-    const normalized = rows
-      .map((row) => {
-        const get = (keys: string[]) => {
-          const found = Object.keys(row).find((k) =>
-            keys.some((key) => k.toLowerCase().includes(key))
-          );
-          return found ? row[found] : undefined;
-        };
-
-        if (isStockData && !isMFData) {
-          const symbol = get(['symbol']);
-          const company_name =
-            get(['company', 'name']) || symbol;
-          const quantity = parseFloat(get(['quantity', 'qty']) || '0');
-          const avg_cost_price = parseFloat(
-            get(['avg_cost', 'cost_price', 'average']) || '0'
-          );
-          const current_price = parseFloat(
-            get(['current', 'price']) || avg_cost_price?.toString() || '0'
-          );
-
-          if (!symbol || !quantity) return null;
-
-          return {
-            family_member_id: familyMemberId,
-            symbol: symbol.toUpperCase(),
-            company_name: company_name || symbol,
-            quantity,
-            avg_cost_price: avg_cost_price || 0,
-            current_price: current_price || avg_cost_price || 0,
-          } as NewStockHoldingInput;
-        } else if (isMFData) {
-          const fund_name = get(['fund', 'name']);
-          const units = parseFloat(get(['units']) || '0');
-          const nav = parseFloat(get(['nav']) || '0');
-          const current_nav =
-            parseFloat(get(['current_nav', 'curr_nav']) || '0') || nav;
-          const cost_value = parseFloat(get(['cost', 'cost_value', 'invested']) || '0');
-          const current_value = parseFloat(get(['current', 'value', 'current_value']) || '0');
-
-          if (!fund_name || (!cost_value && !current_value)) return null;
-
-          return {
-            family_member_id: familyMemberId,
-            fund_name,
-            units: units || undefined,
-            nav: nav || undefined,
-            current_nav: current_nav || undefined,
-            cost_value,
-            current_value,
-          } as NewMFHoldingInput;
-        }
-
-        return null;
-      })
-      .filter((r): r is NewStockHoldingInput | NewMFHoldingInput => r !== null);
-
-    if (normalized.length === 0) {
-      throw new Error('No valid rows found in file');
-    }
-
-    // Split by type
+    // Split by type and upload
     const stockRows = normalized.filter(
       (r): r is NewStockHoldingInput => 'symbol' in r
     );
@@ -250,12 +292,8 @@ export default function PortfolioManager({
       (r): r is NewMFHoldingInput => 'fund_name' in r
     );
 
-    if (stockRows.length > 0) {
-      await bulkAddStockHoldings(stockRows);
-    }
-    if (mfRows.length > 0) {
-      await bulkAddMFHoldings(mfRows);
-    }
+    if (stockRows.length > 0) await bulkAddStockHoldings(stockRows);
+    if (mfRows.length > 0) await bulkAddMFHoldings(mfRows);
 
     setUploadSuccess(normalized.length);
     setTimeout(() => onComplete(), 1200);
@@ -268,11 +306,11 @@ export default function PortfolioManager({
 
     try {
       if (form.type === 'stock') {
-        const quantity = parseFloat(form.quantity);
-        const avg_cost_price = parseFloat(form.avg_cost_price);
-        const current_price = parseFloat(form.current_price || form.avg_cost_price);
+        const q = parseFloat(form.quantity);
+        const cp = parseFloat(form.avg_cost_price);
+        const curp = parseFloat(form.current_price || form.avg_cost_price);
 
-        if (!form.symbol || !quantity || !avg_cost_price) {
+        if (!form.symbol || !q || !cp) {
           throw new Error('Symbol, quantity, and average cost price are required.');
         }
 
@@ -280,15 +318,15 @@ export default function PortfolioManager({
           family_member_id: familyMemberId,
           symbol: form.symbol.toUpperCase(),
           company_name: form.company_name || form.symbol,
-          quantity,
-          avg_cost_price,
-          current_price: current_price || avg_cost_price,
+          quantity: q,
+          avg_cost_price: cp,
+          current_price: curp || cp,
         });
       } else {
-        const cost_value = parseFloat(form.cost_value);
-        const current_value = parseFloat(form.current_value);
+        const cv = parseFloat(form.current_value);
+        const iv = parseFloat(form.cost_value);
 
-        if (!form.fund_name || (!cost_value && !current_value)) {
+        if (!form.fund_name || (!iv && !cv)) {
           throw new Error('Fund name and at least one value (cost or current) required.');
         }
 
@@ -298,8 +336,8 @@ export default function PortfolioManager({
           units: form.units ? parseFloat(form.units) : undefined,
           nav: form.nav ? parseFloat(form.nav) : undefined,
           current_nav: form.current_nav ? parseFloat(form.current_nav) : undefined,
-          cost_value,
-          current_value,
+          cost_value: iv,
+          current_value: cv,
         });
       }
 
@@ -337,7 +375,7 @@ export default function PortfolioManager({
           <p className="text-slate-400 text-sm max-w-md mx-auto">
             {hasHoldings
               ? 'Upload more holdings or add them one at a time.'
-              : 'Upload your portfolio from Kuvera, your broker, or add manually. Nothing is fabricated or pre-filled.'}
+              : 'Upload your portfolio from Kuvera, your broker, or add manually.'}
           </p>
         </div>
 
@@ -384,18 +422,13 @@ export default function PortfolioManager({
 
         <div className="mb-6 p-4 bg-slate-800/50 rounded-lg border border-slate-600">
           <p className="text-sm text-slate-300 mb-3">
-            <strong>Supported formats:</strong> CSV (Excel/Google Sheets export) or XLS
-            (Excel files). Required columns vary by type:
+            <strong>Supports:</strong> CSV and XLS files from Kuvera, your broker, or any spreadsheet.
+            Upload detects columns automatically — no exact naming required.
           </p>
-          <ul className="text-xs text-slate-400 space-y-1 mb-4">
-            <li>
-              <strong>Stocks:</strong> <code>symbol, company_name, quantity, avg_cost_price, current_price</code>
-            </li>
-            <li>
-              <strong>Mutual Funds:</strong> <code>fund_name, cost_value, current_value</code>
-              (optional: units, nav, current_nav)
-            </li>
-          </ul>
+          <p className="text-xs text-slate-400 mb-4">
+            <strong>Works with:</strong> Stock holdings (symbol + quantity + cost) or Mutual Funds
+            (fund name + invested + current value). Both can be in the same file.
+          </p>
 
           <div className="flex flex-col sm:flex-row gap-2">
             <button
@@ -466,9 +499,7 @@ export default function PortfolioManager({
 
         <div className="mb-6 flex gap-2">
           <button
-            onClick={() =>
-              setForm({ ...form, type: 'stock' })
-            }
+            onClick={() => setForm({ ...form, type: 'stock' })}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
               isStock
                 ? 'bg-invest-accent text-white'
@@ -478,9 +509,7 @@ export default function PortfolioManager({
             Stock
           </button>
           <button
-            onClick={() =>
-              setForm({ ...form, type: 'mf' })
-            }
+            onClick={() => setForm({ ...form, type: 'mf' })}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
               !isStock
                 ? 'bg-invest-accent text-white'
@@ -644,7 +673,7 @@ export default function PortfolioManager({
         </button>
         <h2 className="text-lg font-semibold mb-4">Your Holdings</h2>
 
-        <div className="space-y-3">
+        <div className="space-y-3 max-h-96 overflow-y-auto">
           {stocks.map((stock) => (
             <HoldingRow
               key={`stock-${stock.id}`}
@@ -653,10 +682,7 @@ export default function PortfolioManager({
                 name: `${stock.symbol} (${stock.owner_name})`,
                 value: stock.value_at_market,
               }}
-              onDelete={async () => {
-                // Delete is handled in HoldingsOverview now, refresh from there
-                onComplete();
-              }}
+              onDelete={onComplete}
             />
           ))}
           {mfs.map((fund) => (
@@ -667,9 +693,7 @@ export default function PortfolioManager({
                 name: fund.fund_name,
                 value: fund.current_value,
               }}
-              onDelete={async () => {
-                onComplete();
-              }}
+              onDelete={onComplete}
             />
           ))}
           {stocks.length === 0 && mfs.length === 0 && (
