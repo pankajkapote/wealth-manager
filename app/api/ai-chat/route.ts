@@ -1,148 +1,92 @@
+import Anthropic from '@anthropic-ai/sdk';
 import { NextRequest, NextResponse } from 'next/server';
 
-const CLAUDE_API_KEY = process.env.CLAUDE_API_KEY;
-const CLAUDE_API_URL = 'https://api.anthropic.com/v1/messages';
+const client = new Anthropic({
+  apiKey: process.env.CLAUDE_API_KEY,
+});
 
-// Default to Haiku — it's far cheaper than Sonnet/Opus and plenty capable
-// for portfolio Q&A. Override with CLAUDE_MODEL env var in Vercel if you
-// ever want a stronger model (e.g. 'claude-sonnet-4-5') for harder questions.
-const CLAUDE_MODEL = process.env.CLAUDE_MODEL || 'claude-haiku-4-5-20251001';
+const DEFAULT_MODEL = 'claude-haiku-4-5-20251001';
+const SELECTED_MODEL = process.env.CLAUDE_MODEL || DEFAULT_MODEL;
 
-interface PortfolioContext {
-  portfolio: {
-    totalValue: number;
-    totalInvested: number;
-    holdings: number;
-  };
-  recentInsights: Array<{
-    title: string;
-    description: string;
-    type: string;
-  }>;
-}
-
-export async function POST(request: NextRequest) {
+export async function POST(req: NextRequest) {
   try {
-    const body = await request.json();
-    const { message, context } = body as {
-      message: string;
-      context: PortfolioContext;
-    };
+    const { messages, portfolio_context } = await req.json();
 
-    if (!message || !message.trim()) {
+    if (!Array.isArray(messages) || messages.length === 0) {
       return NextResponse.json(
-        { error: 'Message is required' },
+        { error: 'messages array required' },
         { status: 400 }
       );
     }
 
-    if (!CLAUDE_API_KEY) {
-      console.error('CLAUDE_API_KEY is not set in environment variables');
-      return NextResponse.json(
-        {
-          error: 'Claude API key not configured',
-          message:
-            'Set CLAUDE_API_KEY in your Vercel project → Settings → Environment Variables, then redeploy.',
-        },
-        { status: 500 }
-      );
-    }
+    // Build system prompt with portfolio context
+    const systemPrompt = portfolio_context
+      ? `You are a personal wealth advisor AI analyzing an Indian investor's portfolio.
 
-    const systemPrompt = `You are a personal investment wealth manager AI assistant. You have access to the user's complete investment portfolio and provide actionable insights, not noise.
+Portfolio Summary:
+- Total Value: ₹${portfolio_context.totalValue?.toLocaleString('en-IN')}
+- Total Invested: ₹${portfolio_context.totalInvested?.toLocaleString('en-IN')}
+- Unrealized Gains: ₹${portfolio_context.totalGains?.toLocaleString('en-IN')} (${portfolio_context.gainPercentage?.toFixed(1)}%)
+- Holdings: ${portfolio_context.holdingsCount || 0} (${portfolio_context.stockCount || 0} stocks, ${portfolio_context.mfCount || 0} MF schemes)
 
-User's Portfolio Context:
-- Total Portfolio Value: ₹${context?.portfolio?.totalValue?.toLocaleString('en-IN') ?? 'unknown'}
-- Total Invested: ₹${context?.portfolio?.totalInvested?.toLocaleString('en-IN') ?? 'unknown'}
-- Number of Holdings: ${context?.portfolio?.holdings ?? 'unknown'}
+Top Gainers: ${portfolio_context.topGainers?.slice(0, 3).map((h: any) => `${('symbol' in h ? h.symbol : h.fund_name)} (+${h.gain_loss_percent?.toFixed(1)}%)`).join(', ')}
+Top Losers: ${portfolio_context.topLosers?.slice(0, 3).map((h: any) => `${('symbol' in h ? h.symbol : h.fund_name)} (${h.gain_loss_percent?.toFixed(1)}%)`).join(', ')}
 
-Recent AI Insights Generated:
-${(context?.recentInsights || [])
-  .map((insight) => `- ${insight.type}: ${insight.title} - ${insight.description}`)
-  .join('\n')}
+Provide concise, actionable insights. Format responses for Indian investors (use ₹ symbol, Indian market context).`
+      : `You are a friendly personal wealth advisor. Help users with investment advice and portfolio analysis for Indian investors. Use ₹ symbol and Indian market context.`;
 
-Your role is to:
-1. Answer investment questions with specific data from their portfolio
-2. Provide SMART (Specific, Measurable, Achievable, Relevant, Time-bound) recommendations
-3. Always explain the reasoning behind suggestions
-4. Consider tax implications and Indian investment context
-5. Be concise - avoid unnecessary jargon
-6. Help with portfolio rebalancing decisions
-7. Explain when to buy/sell/hold with conviction levels
-
-Guidelines:
-- Always be honest about risks
-- Suggest consulting a financial advisor for major decisions
-- Use Indian Rupee (₹) and Indian context
-- Focus on long-term wealth creation (20+ year horizon based on user's profile)
-- Consider both direct stocks and mutual funds
-- Evaluate concentration risk
-- Factor in dividend yields and tax-loss harvesting opportunities
-
-Keep responses under 200 words unless the question genuinely needs more detail.`;
-
-    const response = await fetch(CLAUDE_API_URL, {
-      method: 'POST',
-      headers: {
-        'x-api-key': CLAUDE_API_KEY,
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: CLAUDE_MODEL,
-        max_tokens: 500,
-        system: systemPrompt,
-        messages: [
-          {
-            role: 'user',
-            content: message,
-          },
-        ],
-      }),
+    // Call Claude API
+    const response = await client.messages.create({
+      model: SELECTED_MODEL,
+      max_tokens: 1024,
+      system: systemPrompt,
+      messages: messages.map((msg: any) => ({
+        role: msg.role,
+        content: msg.content,
+      })),
     });
 
-    if (!response.ok) {
-      const errorBody = await response.text();
-      console.error('Claude API Error:', response.status, errorBody);
-
-      // Surface the real reason instead of a generic 500 - makes debugging
-      // in Vercel logs / browser network tab instant instead of guesswork.
-      let parsedMessage = errorBody;
-      try {
-        const parsed = JSON.parse(errorBody);
-        parsedMessage = parsed?.error?.message || errorBody;
-      } catch {
-        // errorBody wasn't JSON, use as-is
-      }
-
-      return NextResponse.json(
-        {
-          error: 'Claude API request failed',
-          status: response.status,
-          message: parsedMessage,
-        },
-        { status: response.status }
-      );
-    }
-
-    const data = (await response.json()) as {
-      content: Array<{ type: string; text: string }>;
-    };
-
-    const textBlock = data.content.find((block) => block.type === 'text');
-    const aiResponse = textBlock?.text || 'Unable to process response';
+    // Extract text from response
+    const textBlock = response.content.find((block: any) => block.type === 'text');
+    const responseText = textBlock
+      ? (textBlock as any).text
+      : 'No response generated';
 
     return NextResponse.json({
-      response: aiResponse,
-      model: CLAUDE_MODEL,
-      timestamp: new Date().toISOString(),
-    });
-  } catch (error) {
-    console.error('API Error:', error);
-    return NextResponse.json(
-      {
-        error: 'Internal server error',
-        message: error instanceof Error ? error.message : String(error),
+      message: responseText,
+      model: SELECTED_MODEL,
+      usage: {
+        input_tokens: response.usage.input_tokens,
+        output_tokens: response.usage.output_tokens,
       },
+    });
+  } catch (error: any) {
+    console.error('AI Chat Error:', error);
+
+    // Detailed error responses
+    if (error.status === 401) {
+      return NextResponse.json(
+        { error: 'Invalid API key. Check CLAUDE_API_KEY in environment.' },
+        { status: 401 }
+      );
+    }
+    if (error.status === 429) {
+      return NextResponse.json(
+        { error: 'Rate limited. Please wait before retrying.' },
+        { status: 429 }
+      );
+    }
+    if (error.message?.includes('model')) {
+      return NextResponse.json(
+        {
+          error: `Model error: ${error.message}. Using: ${SELECTED_MODEL}. Check CLAUDE_MODEL env var.`,
+        },
+        { status: 400 }
+      );
+    }
+
+    return NextResponse.json(
+      { error: error.message || 'Failed to generate response' },
       { status: 500 }
     );
   }
