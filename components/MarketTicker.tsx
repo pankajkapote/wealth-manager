@@ -1,91 +1,107 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { TrendingUp, TrendingDown } from 'lucide-react';
+import { TrendingUp, TrendingDown, Clock } from 'lucide-react';
 
-interface IndexQuote {
+interface MarketData {
+  name: string;
   symbol: string;
-  label: string;
-  price: number | null;
-  change: number | null;
-  changePercent: number | null;
-  error?: string;
+  price: number;
+  change: number;
+  changePercent: number;
+  isPositive: boolean;
+  timestamp: string;
 }
 
 export default function MarketTicker() {
-  const [now, setNow] = useState<Date | null>(null);
-  const [indices, setIndices] = useState<IndexQuote[]>([]);
-  const [marketError, setMarketError] = useState(false);
+  const [data, setData] = useState<MarketData[]>([]);
+  const [time, setTime] = useState<string>('');
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    setNow(new Date());
-    const clockTimer = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(clockTimer);
-  }, []);
-
-  useEffect(() => {
+    // Fetch market data
     const fetchMarketData = async () => {
       try {
-        const res = await fetch('/api/market-data');
-        const data = await res.json();
-        setIndices(data.indices || []);
-        setMarketError(false);
-      } catch {
-        setMarketError(true);
+        const response = await fetch(
+          '/api/market-data?symbols=^NSEI&symbols=^BSESN'
+        );
+        if (response.ok) {
+          const result = await response.json();
+          setData(result.data || []);
+        }
+      } catch (err) {
+        console.error('Failed to fetch market data:', err);
+      } finally {
+        setLoading(false);
       }
     };
 
     fetchMarketData();
-    const marketTimer = setInterval(fetchMarketData, 60000); // refresh every minute
-    return () => clearInterval(marketTimer);
+    const interval = setInterval(fetchMarketData, 60000); // Refresh every minute
+
+    return () => clearInterval(interval);
   }, []);
 
-  // Avoid SSR/CSR mismatch on the clock by not rendering time until mounted.
-  if (!now) return null;
+  // Update time
+  useEffect(() => {
+    const updateTime = () => {
+      const now = new Date();
+      setTime(
+        now.toLocaleTimeString('en-IN', {
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: true,
+        })
+      );
+    };
 
-  const dateStr = now.toLocaleDateString('en-IN', {
-    weekday: 'short',
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  });
-  const timeStr = now.toLocaleTimeString('en-IN', {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
+    updateTime();
+    const interval = setInterval(updateTime, 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-400">
-      <span>
-        {dateStr} · {timeStr} IST
-      </span>
+    <div className="flex items-center justify-between text-sm">
+      <div className="flex items-center gap-1 text-slate-400">
+        <Clock className="w-4 h-4" />
+        <span className="font-mono">{time || '--:--:--'}</span>
+      </div>
 
-      {indices.map((idx) => (
-        <span key={idx.symbol} className="flex items-center gap-1">
-          <span className="text-slate-300 font-medium">{idx.label}</span>
-          {idx.price !== null ? (
-            <>
-              <span>{idx.price.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
-              <span
-                className={`flex items-center gap-0.5 ${
-                  (idx.change ?? 0) >= 0 ? 'text-gain' : 'text-loss'
+      {loading ? (
+        <div className="flex gap-4">
+          <div className="h-4 w-32 bg-slate-700 rounded animate-pulse"></div>
+          <div className="h-4 w-32 bg-slate-700 rounded animate-pulse"></div>
+        </div>
+      ) : (
+        <div className="flex gap-4">
+          {data.map((item) => (
+            <div key={item.symbol} className="flex items-center gap-2">
+              <span className="text-slate-300 font-medium">{item.name}</span>
+              <span className="font-semibold">
+                {item.price.toLocaleString('en-IN', {
+                  maximumFractionDigits: 0,
+                })}
+              </span>
+              <div
+                className={`flex items-center gap-1 text-xs font-medium ${
+                  item.isPositive ? 'text-gain' : 'text-loss'
                 }`}
               >
-                {(idx.change ?? 0) >= 0 ? (
+                {item.isPositive ? (
                   <TrendingUp className="w-3 h-3" />
                 ) : (
                   <TrendingDown className="w-3 h-3" />
                 )}
-                {idx.changePercent !== null ? `${idx.changePercent.toFixed(2)}%` : ''}
-              </span>
-            </>
-          ) : (
-            <span className="text-slate-600">unavailable</span>
-          )}
-        </span>
-      ))}
-      {marketError && <span className="text-slate-600">Market data unavailable</span>}
+                <span>
+                  {item.isPositive ? '+' : ''}
+                  {item.changePercent.toFixed(2)}%
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
