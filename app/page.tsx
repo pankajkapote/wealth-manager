@@ -30,6 +30,14 @@ function Dashboard() {
     },
   };
 
+  // Safe defaults
+  const totalValue = summary?.totalValue ?? 0;
+  const gainPercentage = summary?.gainPercentage ?? 0;
+  const totalGains = summary?.totalGains ?? 0;
+  const holdingsCount = summary?.holdingsCount ?? 0;
+  const stockCount = summary?.stockCount ?? 0;
+  const mfCount = summary?.mfCount ?? 0;
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800">
       {/* Header */}
@@ -80,21 +88,21 @@ function Dashboard() {
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <StatCard
                       label="Total Portfolio Value"
-                      value={`₹${summary.totalValue.toLocaleString('en-IN')}`}
-                      change={`${summary.gainPercentage >= 0 ? '+' : ''}${summary.gainPercentage.toFixed(1)}%`}
-                      isPositive={summary.gainPercentage >= 0}
+                      value={`₹${totalValue.toLocaleString('en-IN')}`}
+                      change={`${gainPercentage >= 0 ? '+' : ''}${gainPercentage.toFixed(1)}%`}
+                      isPositive={gainPercentage >= 0}
                       icon={<Wallet className="w-5 h-5" />}
                     />
                     <StatCard
                       label="Unrealized Gains"
-                      value={`₹${summary.totalGains.toLocaleString('en-IN')}`}
-                      change={`${summary.holdingsCount} holdings`}
-                      isPositive={summary.totalGains >= 0}
+                      value={`₹${totalGains.toLocaleString('en-IN')}`}
+                      change={`${holdingsCount} holdings`}
+                      isPositive={totalGains >= 0}
                       icon={<TrendingUp className="w-5 h-5" />}
                     />
                     <StatCard
                       label="Stocks vs Funds"
-                      value={`${summary.stockCount} / ${summary.mfCount}`}
+                      value={`${stockCount} / ${mfCount}`}
                       change="stocks / MF schemes"
                       isPositive={true}
                       icon={<BarChart3 className="w-5 h-5" />}
