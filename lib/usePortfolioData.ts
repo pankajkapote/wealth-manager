@@ -1,68 +1,76 @@
-'use client';
-
-import { useEffect, useState, useCallback } from 'react';
-import { useAuth } from './useAuth';
+import { useEffect, useState } from 'react';
 import {
   getOrCreatePrimaryFamilyMember,
-  getFamilyMembers,
   getStockHoldings,
   getMFHoldings,
   computePortfolioSummary,
   StockHolding,
   MFHolding,
-} from './portfolio';
+  PortfolioSummary,
+} from '@/lib/portfolio';
 
 export function usePortfolioData() {
-  const { user } = useAuth();
   const [familyMemberId, setFamilyMemberId] = useState<number | null>(null);
-  const [familyMemberIds, setFamilyMemberIds] = useState<number[]>([]);
   const [stocks, setStocks] = useState<StockHolding[]>([]);
   const [mfs, setMfs] = useState<MFHolding[]>([]);
+  const [summary, setSummary] = useState<PortfolioSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const refresh = useCallback(async () => {
-    if (!user) return;
-    setLoading(true);
-    setError(null);
+  const loadPortfolioData = async () => {
     try {
-      // First login ever? This creates a blank family_members row for the
-      // user instead of showing anyone else's demo data.
-      const primaryId = await getOrCreatePrimaryFamilyMember(user.id, user.email);
-      setFamilyMemberId(primaryId);
+      setLoading(true);
+      setError(null);
 
-      const members = await getFamilyMembers(user.id);
-      const ids = members.map((m) => m.id);
-      setFamilyMemberIds(ids);
+      // Get or create primary family member
+      const member = await getOrCreatePrimaryFamilyMember();
+      setFamilyMemberId(member.id);
 
-      const [stockData, mfData] = await Promise.all([
-        getStockHoldings(ids),
-        getMFHoldings(ids),
-      ]);
-      setStocks(stockData);
-      setMfs(mfData);
+      // Fetch holdings
+      const stocksData = await getStockHoldings(member.id);
+      const mfsData = await getMFHoldings(member.id);
+      setStocks(stocksData);
+      setMfs(mfsData);
+
+      // Compute summary
+      const summaryData = await computePortfolioSummary(member.id);
+      setSummary(summaryData);
     } catch (err: any) {
+      console.error('Error loading portfolio data:', err);
       setError(err.message || 'Failed to load portfolio');
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  };
+
+  const refetch = async () => {
+    if (!familyMemberId) return;
+    try {
+      const stocksData = await getStockHoldings(familyMemberId);
+      const mfsData = await getMFHoldings(familyMemberId);
+      setStocks(stocksData);
+      setMfs(mfsData);
+
+      const summaryData = await computePortfolioSummary(familyMemberId);
+      setSummary(summaryData);
+    } catch (err: any) {
+      console.error('Error refetching data:', err);
+      setError(err.message);
+    }
+  };
 
   useEffect(() => {
-    refresh();
-  }, [refresh]);
-
-  const summary = computePortfolioSummary(stocks, mfs);
+    loadPortfolioData();
+  }, []);
 
   return {
     familyMemberId,
-    familyMemberIds,
     stocks,
     mfs,
     summary,
     loading,
     error,
-    refresh,
-    isEmpty: !loading && stocks.length === 0 && mfs.length === 0,
+    isEmpty: stocks.length === 0 && mfs.length === 0,
+    refetch,
   };
 }
