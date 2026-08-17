@@ -1,15 +1,18 @@
-import Anthropic from '@anthropic-ai/sdk';
 import { NextRequest, NextResponse } from 'next/server';
+import Anthropic from '@anthropic-ai/sdk';
 
-const client = new Anthropic({
-  apiKey: process.env.CLAUDE_API_KEY,
-});
-
-const DEFAULT_MODEL = 'claude-haiku-4-5-20251001';
-const SELECTED_MODEL = process.env.CLAUDE_MODEL || DEFAULT_MODEL;
+const SELECTED_MODEL = process.env.CLAUDE_MODEL || 'claude-haiku-4-5-20251001';
 
 export async function POST(req: NextRequest) {
   try {
+    const apiKey = process.env.CLAUDE_API_KEY;
+    if (!apiKey) {
+      return NextResponse.json(
+        { error: 'CLAUDE_API_KEY not configured in environment' },
+        { status: 500 }
+      );
+    }
+
     const { messages, portfolio_context } = await req.json();
 
     if (!Array.isArray(messages) || messages.length === 0) {
@@ -35,29 +38,30 @@ Top Losers: ${portfolio_context.topLosers?.slice(0, 3).map((h: any) => `${('symb
 Provide concise, actionable insights. Format responses for Indian investors (use ₹ symbol, Indian market context).`
       : `You are a friendly personal wealth advisor. Help users with investment advice and portfolio analysis for Indian investors. Use ₹ symbol and Indian market context.`;
 
-    // Call Claude API
+    // Initialize Anthropic client
+    const client = new Anthropic({ apiKey });
+
+    // Call Claude API with messages
     const response = await client.messages.create({
       model: SELECTED_MODEL,
       max_tokens: 1024,
       system: systemPrompt,
       messages: messages.map((msg: any) => ({
-        role: msg.role,
+        role: msg.role as 'user' | 'assistant',
         content: msg.content,
       })),
     });
 
     // Extract text from response
     const textBlock = response.content.find((block: any) => block.type === 'text');
-    const responseText = textBlock
-      ? (textBlock as any).text
-      : 'No response generated';
+    const responseText = textBlock && 'text' in textBlock ? textBlock.text : 'No response generated';
 
     return NextResponse.json({
       message: responseText,
       model: SELECTED_MODEL,
       usage: {
-        input_tokens: response.usage.input_tokens,
-        output_tokens: response.usage.output_tokens,
+        input_tokens: response.usage?.input_tokens || 0,
+        output_tokens: response.usage?.output_tokens || 0,
       },
     });
   } catch (error: any) {
