@@ -8,14 +8,11 @@
   box-sizing: border-box;
 }
 
-html, body {
-  width: 100%;
-  height: 100%;
-  overflow-x: hidden;
+html {
+  scroll-behavior: smooth;
 }
 
 body {
-  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
     'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
     sans-serif;
@@ -23,36 +20,47 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Scrollbar styling */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+/* ===== COMPONENT CLASSES ===== */
+
+.glass {
+  @apply bg-slate-900/40 backdrop-blur-sm border border-slate-700/50;
 }
 
-::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.05);
+.glass-dark {
+  @apply bg-slate-900/60 backdrop-blur-lg border border-slate-700;
 }
 
-::-webkit-scrollbar-thumb {
-  background: rgba(30, 64, 175, 0.5);
-  border-radius: 4px;
+.card-hover {
+  @apply transition-all duration-200 hover:shadow-lg hover:border-slate-600;
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(30, 64, 175, 0.8);
+.btn-primary {
+  @apply bg-invest-accent text-white font-medium px-4 py-2 rounded-lg hover:bg-invest-accent/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
 }
 
-/* Custom animations */
-@keyframes slideInUp {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+.btn-secondary {
+  @apply bg-slate-800 text-slate-100 font-medium px-4 py-2 rounded-lg hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
 }
+
+.btn-danger {
+  @apply bg-red-900/30 text-red-300 font-medium px-4 py-2 rounded-lg hover:bg-red-900/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+}
+
+/* ===== UTILITY CLASSES ===== */
+
+.text-gain {
+  @apply text-emerald-400;
+}
+
+.text-loss {
+  @apply text-red-400;
+}
+
+.text-neutral {
+  @apply text-slate-300;
+}
+
+/* ===== ANIMATIONS ===== */
 
 @keyframes fadeIn {
   from {
@@ -63,91 +71,120 @@ body {
   }
 }
 
-@keyframes pulse-slow {
-  0%, 100% {
-    opacity: 1;
+@keyframes slideInUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
   }
-  50% {
-    opacity: 0.5;
+  to {
+    transform: translateY(0);
+    opacity: 1;
   }
 }
 
-.animate-slide-in-up {
-  animation: slideInUp 0.3s ease-out;
+@keyframes slideInRight {
+  from {
+    transform: translateX(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
 }
 
 .animate-fade-in {
-  animation: fadeIn 0.3s ease-out;
+  animation: fadeIn 0.3s ease-in-out;
 }
 
-.animate-pulse-slow {
-  animation: pulse-slow 3s ease-in-out infinite;
+.animate-slide-in-up {
+  animation: slideInUp 0.3s ease-in-out;
 }
 
-/* Glass morphism effect */
-.glass {
-  background: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+.animate-slide-in-right {
+  animation: slideInRight 0.3s ease-in-out;
 }
 
-.glass-dark {
-  background: rgba(15, 23, 42, 0.8);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(30, 64, 175, 0.3);
+/* ===== SCROLLBAR STYLING ===== */
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
 }
 
-/* Card hover effect */
-.card-hover {
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+::-webkit-scrollbar-track {
+  background: transparent;
 }
 
-.card-hover:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 10px 25px rgba(30, 64, 175, 0.3);
+::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.5);
+  border-radius: 4px;
 }
 
-/* Button styles */
-.btn-primary {
-  @apply px-4 py-2 bg-invest-accent text-white rounded-lg font-medium hover:bg-blue-700 transition-colors;
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.7);
 }
 
-.btn-secondary {
-  @apply px-4 py-2 bg-slate-700 text-white rounded-lg font-medium hover:bg-slate-600 transition-colors;
+/* ===== FORM STYLING ===== */
+
+input[type='text'],
+input[type='email'],
+input[type='password'],
+input[type='number'],
+input[type='tel'],
+textarea,
+select {
+  @apply w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-invest-accent focus:ring-1 focus:ring-invest-accent/30 transition;
 }
 
-/* Gain/Loss colors */
-.bg-gain-light {
-  @apply bg-green-900/20;
+input:disabled,
+textarea:disabled,
+select:disabled {
+  @apply opacity-50 cursor-not-allowed;
 }
 
-.bg-loss-light {
-  @apply bg-red-900/20;
+/* ===== TABLE STYLING ===== */
+
+table {
+  @apply w-full border-collapse;
 }
 
-/* Badge styles */
-.badge-success {
-  @apply inline-flex items-center gap-1 px-3 py-1 bg-green-900/30 text-green-200 rounded-full text-sm font-medium border border-green-800/50;
+th {
+  @apply bg-slate-800/50 text-slate-300 font-semibold px-3 py-2 text-left text-sm;
 }
 
-.badge-danger {
-  @apply inline-flex items-center gap-1 px-3 py-1 bg-red-900/30 text-red-200 rounded-full text-sm font-medium border border-red-800/50;
+td {
+  @apply border-b border-slate-700 px-3 py-2 text-sm;
 }
 
-.badge-warning {
-  @apply inline-flex items-center gap-1 px-3 py-1 bg-yellow-900/30 text-yellow-200 rounded-full text-sm font-medium border border-yellow-800/50;
+tr:last-child td {
+  @apply border-b-0;
 }
 
-.badge-info {
-  @apply inline-flex items-center gap-1 px-3 py-1 bg-blue-900/30 text-blue-200 rounded-full text-sm font-medium border border-blue-800/50;
+/* ===== RESPONSIVE ===== */
+
+@media (max-width: 640px) {
+  .text-responsive {
+    @apply text-sm;
+  }
+
+  .gap-responsive {
+    @apply gap-2;
+  }
+
+  .p-responsive {
+    @apply p-3;
+  }
 }
 
-/* Safe area for mobile notch */
-@supports (padding: max(0px)) {
+/* ===== PRINT STYLES ===== */
+
+@media print {
   body {
-    padding-left: max(12px, env(safe-area-inset-left));
-    padding-right: max(12px, env(safe-area-inset-right));
-    padding-top: max(12px, env(safe-area-inset-top));
-    padding-bottom: max(12px, env(safe-area-inset-bottom));
+    @apply bg-white;
+  }
+
+  .no-print {
+    @apply hidden;
   }
 }
