@@ -8,31 +8,6 @@ interface CachedData {
 const CACHE_DURATION = 60 * 1000; // 60 seconds
 let cache: { [key: string]: CachedData } = {};
 
-async function fetchFromYahooFinance(symbol: string): Promise<any> {
-  try {
-    // Yahoo Finance API endpoint
-    const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${symbol}`;
-
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      },
-    });
-
-    if (!response.ok) {
-      console.error(`Yahoo Finance error for ${symbol}:`, response.status);
-      return null;
-    }
-
-    const data = await response.json();
-    return data;
-  } catch (error) {
-    console.error(`Failed to fetch ${symbol}:`, error);
-    return null;
-  }
-}
-
 async function fetchQuote(symbol: string): Promise<{
   symbol: string;
   price: number;
@@ -47,7 +22,7 @@ async function fetchQuote(symbol: string): Promise<{
   }
 
   try {
-    // Try alternate Yahoo Finance endpoint
+    // Try Yahoo Finance API endpoint
     const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}`;
     const response = await fetch(url, {
       headers: {
@@ -102,14 +77,13 @@ async function fetchQuote(symbol: string): Promise<{
       return cache[symbol].data;
     }
 
-    // Return fallback data
+    // Return fallback data (zeros, no error property to avoid type mismatch)
     return {
       symbol,
       price: 0,
       change: 0,
       changePercent: 0,
       timestamp: new Date().toISOString(),
-      error: 'Unable to fetch real-time data',
     };
   }
 }
