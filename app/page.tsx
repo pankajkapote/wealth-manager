@@ -1,11 +1,10 @@
 'use client';
 
 import React, { useState } from 'react';
-import { BarChart3, TrendingUp, AlertCircle, Zap, Target, Wallet, Menu, X } from 'lucide-react';
+import { BarChart3, TrendingUp, Zap, Wallet, Menu, X } from 'lucide-react';
 import PortfolioHealth from '@/components/PortfolioHealth';
 import HoldingsOverview from '@/components/HoldingsOverview';
 import AIInsights from '@/components/AIInsights';
-import CapitalAllocator from '@/components/CapitalAllocator';
 import Navigation from '@/components/Navigation';
 import AuthGuard from '@/components/AuthGuard';
 import MarketTicker from '@/components/MarketTicker';
@@ -29,16 +28,12 @@ function Dashboard() {
       title: 'AI Insights',
       icon: <Zap className="w-5 h-5" />,
     },
-    allocate: {
-      title: 'Capital Allocator',
-      icon: <Target className="w-5 h-5" />,
-    },
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800">
       {/* Header */}
-      <header className="sticky top-0 z-40 glass-dark border-b border-slate-700">
+      <header className="sticky top-0 z-30 glass-dark border-b border-slate-700">
         <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-3">
@@ -111,7 +106,6 @@ function Dashboard() {
                   {selectedView === 'overview' && <HoldingsOverview />}
                   {selectedView === 'health' && <PortfolioHealth />}
                   {selectedView === 'insights' && <AIInsights />}
-                  {selectedView === 'allocate' && <CapitalAllocator />}
                 </div>
               </>
             )}
