@@ -1,11 +1,10 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { LogOut, Settings, Bell, MessageCircle, Loader2, X } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/lib/useAuth';
-import { useEffect } from 'react'; 
 
 interface NavigationProps {
   selectedView: string;
@@ -108,7 +107,7 @@ export default function Navigation({
 
       {/* Mobile Menu */}
       {mobileMenuOpen && (
-        <div className="fixed inset-0 z-30 lg:hidden">
+        <div className="fixed inset-0 z-40 lg:hidden">
           <div
             className="absolute inset-0 bg-black/50"
             onClick={() => setMobileMenuOpen(false)}
@@ -176,8 +175,8 @@ export default function Navigation({
               <p className="font-medium">{user?.email}</p>
             </div>
             <p className="text-xs text-slate-500">
-              Annual income and time horizon are set in the Capital Allocator
-              tab.
+              To update your investment settings or add WhatsApp alerts, use
+              the respective menu items in the sidebar.
             </p>
           </div>
         </SidePanel>
@@ -214,10 +213,38 @@ function SidePanel({
 function WhatsAppPanel({ onClose }: { onClose: () => void }) {
   const { user } = useAuth();
   const [phone, setPhone] = useState('');
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // LOAD saved phone on mount
+  useEffect(() => {
+    if (!user) return;
+    const loadPhone = async () => {
+      try {
+        const { data, error: fetchError } = await supabase
+          .from('family_members')
+          .select('phone')
+          .eq('user_id', user.id)
+          .single();
+
+        if (fetchError && fetchError.code !== 'PGRST116') {
+          console.error('Fetch error:', fetchError);
+        }
+        if (data?.phone) {
+          setPhone(data.phone);
+        }
+      } catch (err) {
+        console.error('Failed to load phone:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadPhone();
+  }, [user]);
+
+  // SAVE phone to Supabase
   const handleSave = async () => {
     if (!user) return;
     setSaving(true);
@@ -227,6 +254,7 @@ function WhatsAppPanel({ onClose }: { onClose: () => void }) {
         .from('family_members')
         .update({ phone })
         .eq('user_id', user.id);
+
       if (updateError) throw updateError;
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
@@ -237,11 +265,20 @@ function WhatsAppPanel({ onClose }: { onClose: () => void }) {
     }
   };
 
+  if (loading) {
+    return (
+      <SidePanel title="WhatsApp Alerts" onClose={onClose}>
+        <p className="text-sm text-slate-400">Loading...</p>
+      </SidePanel>
+    );
+  }
+
   return (
     <SidePanel title="WhatsApp Alerts" onClose={onClose}>
       <p className="text-sm text-slate-400 mb-4">
-        Add your WhatsApp number to receive weekly summaries. Sending requires
-        a Twilio account connected on the backend (see setup docs).
+        {phone
+          ? 'Your WhatsApp number is saved. Update it below if needed.'
+          : 'Add your WhatsApp number to receive portfolio alerts. Sending requires Twilio credentials (see setup docs).'}
       </p>
       <label className="text-xs text-slate-400 mb-1 block">
         WhatsApp Number (with country code)
@@ -260,7 +297,7 @@ function WhatsAppPanel({ onClose }: { onClose: () => void }) {
         className="btn-primary w-full flex items-center justify-center gap-2"
       >
         {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-        {saved ? 'Saved ✓' : 'Save Number'}
+        {saved ? '✓ Saved' : 'Save Number'}
       </button>
     </SidePanel>
   );
