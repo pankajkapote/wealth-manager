@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import Anthropic from '@anthropic-ai/sdk';
 
 const SELECTED_MODEL = process.env.CLAUDE_MODEL || 'claude-haiku-4-5-20251001';
+const API_KEY = process.env.CLAUDE_API_KEY;
+const API_URL = 'https://api.anthropic.com/v1/messages';
 
 export async function POST(req: NextRequest) {
   try {
-    const apiKey = process.env.CLAUDE_API_KEY;
-    if (!apiKey) {
+    if (!API_KEY) {
       return NextResponse.json(
         { error: 'CLAUDE_API_KEY not configured in environment' },
         { status: 500 }
@@ -38,59 +38,67 @@ Top Losers: ${portfolio_context.topLosers?.slice(0, 3).map((h: any) => `${('symb
 Provide concise, actionable insights. Format responses for Indian investors (use ₹ symbol, Indian market context).`
       : `You are a friendly personal wealth advisor. Help users with investment advice and portfolio analysis for Indian investors. Use ₹ symbol and Indian market context.`;
 
-    // Initialize Anthropic client
-    const client = new Anthropic({ apiKey });
-
-    // Call Claude API with messages
-    const response = await client.messages.create({
-      model: SELECTED_MODEL,
-      max_tokens: 1024,
-      system: systemPrompt,
-      messages: messages.map((msg: any) => ({
-        role: msg.role as 'user' | 'assistant',
-        content: msg.content,
-      })),
+    // Call Claude API via HTTP
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': API_KEY,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: SELECTED_MODEL,
+        max_tokens: 1024,
+        system: systemPrompt,
+        messages: messages.map((msg: any) => ({
+          role: msg.role,
+          content: msg.content,
+        })),
+      }),
     });
 
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      console.error('Anthropic API Error:', errorData);
+
+      if (response.status === 401) {
+        return NextResponse.json(
+          { error: 'Invalid API key. Check CLAUDE_API_KEY.' },
+          { status: 401 }
+        );
+      }
+      if (response.status === 429) {
+        return NextResponse.json(
+          { error: 'Rate limited. Please retry later.' },
+          { status: 429 }
+        );
+      }
+
+      return NextResponse.json(
+        { error: errorData.error?.message || 'API request failed' },
+        { status: response.status }
+      );
+    }
+
+    const data = await response.json();
+
     // Extract text from response
-    const textBlock = response.content.find((block: any) => block.type === 'text');
-    const responseText = textBlock && 'text' in textBlock ? textBlock.text : 'No response generated';
+    const textContent = data.content?.find((block: any) => block.type === 'text');
+    const responseText = textContent?.text || 'No response generated';
 
     return NextResponse.json({
       message: responseText,
       model: SELECTED_MODEL,
       usage: {
-        input_tokens: response.usage?.input_tokens || 0,
-        output_tokens: response.usage?.output_tokens || 0,
+        input_tokens: data.usage?.input_tokens || 0,
+        output_tokens: data.usage?.output_tokens || 0,
       },
     });
   } catch (error: any) {
     console.error('AI Chat Error:', error);
 
-    // Detailed error responses
-    if (error.status === 401) {
-      return NextResponse.json(
-        { error: 'Invalid API key. Check CLAUDE_API_KEY in environment.' },
-        { status: 401 }
-      );
-    }
-    if (error.status === 429) {
-      return NextResponse.json(
-        { error: 'Rate limited. Please wait before retrying.' },
-        { status: 429 }
-      );
-    }
-    if (error.message?.includes('model')) {
-      return NextResponse.json(
-        {
-          error: `Model error: ${error.message}. Using: ${SELECTED_MODEL}. Check CLAUDE_MODEL env var.`,
-        },
-        { status: 400 }
-      );
-    }
-
     return NextResponse.json(
-      { error: error.message || 'Failed to generate response' },
+      { error: error.message || 'Failed to process request' },
       { status: 500 }
     );
   }
