@@ -1,245 +1,207 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
-import { Zap, MessageSquare } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Send, Loader2, AlertCircle, BarChart3 } from 'lucide-react';
 import { usePortfolioData } from '@/lib/usePortfolioData';
-import PortfolioManager from './PortfolioManager';
 
-interface DerivedInsight {
-  id: string;
-  type: 'TOP_GAINER' | 'TOP_LOSER' | 'CONCENTRATION' | 'INFO';
-  title: string;
-  description: string;
+interface Message {
+  role: 'user' | 'assistant';
+  content: string;
 }
 
 export default function AIInsights() {
-  const { familyMemberId, stocks, mfs, summary, loading, isEmpty, refresh } =
-    usePortfolioData();
-  const [aiChat, setAiChat] = useState<Array<{ role: string; text: string }>>([]);
-  const [userInput, setUserInput] = useState('');
-  const [chatLoading, setChatLoading] = useState(false);
+  const { summary, stocks, mfs } = usePortfolioData();
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Real, computed observations from actual holdings — not scripted examples.
-  const insights: DerivedInsight[] = useMemo(() => {
-    if (stocks.length === 0) return [];
-    const list: DerivedInsight[] = [];
+  // Auto-scroll to bottom
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
 
-    const sorted = [...stocks].sort(
-      (a, b) => b.unrealized_gain_loss_pct - a.unrealized_gain_loss_pct
-    );
-    const topGainer = sorted[0];
-    const topLoser = sorted[sorted.length - 1];
+  // Auto-focus textarea
+  useEffect(() => {
+    textareaRef.current?.focus();
+  }, []);
 
-    if (topGainer && topGainer.unrealized_gain_loss_pct > 0) {
-      list.push({
-        id: 'top-gainer',
-        type: 'TOP_GAINER',
-        title: `${topGainer.symbol} is your best performer`,
-        description: `Up ${topGainer.unrealized_gain_loss_pct.toFixed(1)}% from your average cost of ₹${topGainer.avg_cost_price.toFixed(2)}.`,
-      });
-    }
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!input.trim() || loading) return;
 
-    if (topLoser && topLoser.unrealized_gain_loss_pct < 0) {
-      list.push({
-        id: 'top-loser',
-        type: 'TOP_LOSER',
-        title: `${topLoser.symbol} is your weakest performer`,
-        description: `Down ${Math.abs(topLoser.unrealized_gain_loss_pct).toFixed(1)}% from your average cost. Worth reviewing why, and asking the AI below whether it still fits your thesis.`,
-      });
-    }
+    const userMessage = input.trim();
+    setInput('');
+    setError(null);
 
-    if (summary.topHoldings[0] && summary.totalValue > 0) {
-      const pct = (summary.topHoldings[0].value_at_market / summary.totalValue) * 100;
-      if (pct > 15) {
-        list.push({
-          id: 'concentration',
-          type: 'CONCENTRATION',
-          title: `${summary.topHoldings[0].symbol} is ${pct.toFixed(0)}% of your portfolio`,
-          description:
-            'A single holding above ~15% increases concentration risk. Not necessarily wrong if it\'s a high-conviction position — but worth a deliberate check.',
-        });
-      }
-    }
-
-    return list;
-  }, [stocks, summary]);
-
-  const handleAskAI = async (question: string) => {
-    if (!question.trim()) return;
-
-    const newChat = [...aiChat, { role: 'user', text: question }];
-    setAiChat(newChat);
-    setUserInput('');
-    setChatLoading(true);
+    // Add user message
+    const newMessages: Message[] = [
+      ...messages,
+      { role: 'user', content: userMessage },
+    ];
+    setMessages(newMessages);
+    setLoading(true);
 
     try {
       const response = await fetch('/api/ai-chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          message: question,
-          context: {
-            portfolio: {
-              totalValue: summary.totalValue,
-              totalInvested: summary.totalInvested,
-              holdings: summary.holdingsCount,
-            },
-            recentInsights: insights.map((i) => ({
-              title: i.title,
-              description: i.description,
-              type: i.type,
-            })),
-          },
+          messages: newMessages.map((m) => ({
+            role: m.role,
+            content: m.content,
+          })),
+          portfolio_context: summary ? {
+            totalValue: summary.totalValue,
+            totalInvested: summary.totalInvested,
+            totalGains: summary.totalGains,
+            gainPercentage: summary.gainPercentage,
+            holdingsCount: summary.holdingsCount,
+            stockCount: summary.stockCount,
+            mfCount: summary.mfCount,
+            topGainers: summary.topGainers,
+            topLosers: summary.topLosers,
+          } : undefined,
         }),
       });
 
-      const data = await response.json();
-
-      if (response.ok) {
-        setAiChat([...newChat, { role: 'assistant', text: data.response }]);
-      } else {
-        setAiChat([
-          ...newChat,
-          {
-            role: 'assistant',
-            text: `⚠️ ${data.message || data.error || 'Something went wrong talking to Claude.'}`,
-          },
-        ]);
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `HTTP ${response.status}`);
       }
-    } catch (error) {
-      setAiChat([
-        ...newChat,
-        {
-          role: 'assistant',
-          text: '⚠️ Could not reach the server. Check your connection and try again.',
-        },
+
+      const data = await response.json();
+      setMessages([
+        ...newMessages,
+        { role: 'assistant', content: data.message },
       ]);
+    } catch (err: any) {
+      setError(err.message || 'Failed to get response');
+      setMessages(newMessages);
     } finally {
-      setChatLoading(false);
+      setLoading(false);
     }
   };
 
-  if (loading) {
-    return (
-      <div className="glass-dark rounded-lg p-8 text-center text-slate-400 text-sm">
-        Loading...
-      </div>
-    );
-  }
-
-  if (isEmpty && familyMemberId) {
-    return (
-      <PortfolioManager
-        familyMemberId={familyMemberId}
-        stocks={stocks}
-        mfs={mfs}
-        onComplete={refresh}
-      />
-    );
-  }
-
-  const getTypeColor = (type: string) => {
-    const colors: Record<string, string> = {
-      TOP_GAINER: 'border-l-green-500 bg-green-900/10',
-      TOP_LOSER: 'border-l-red-500 bg-red-900/10',
-      CONCENTRATION: 'border-l-yellow-500 bg-yellow-900/10',
-      INFO: 'border-l-blue-500 bg-blue-900/10',
-    };
-    return colors[type] || 'border-l-blue-500 bg-blue-900/10';
-  };
+  const isEmpty = stocks.length === 0 && mfs.length === 0;
 
   return (
-    <div className="space-y-6">
-      {/* AI Chat */}
-      <div className="glass-dark rounded-lg p-6 flex flex-col h-96">
-        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-          <MessageSquare className="w-5 h-5 text-invest-accent" />
-          Ask Your Wealth Manager
+    <div className="flex flex-col h-96 bg-gradient-to-br from-slate-900/20 to-slate-800/20 rounded-lg border border-slate-700 overflow-hidden">
+      {/* Header */}
+      <div className="bg-slate-900/60 border-b border-slate-700 px-4 py-3">
+        <h3 className="font-semibold flex items-center gap-2">
+          <BarChart3 className="w-5 h-5 text-invest-accent" />
+          AI Portfolio Analyst
         </h3>
-
-        <div className="flex-1 overflow-y-auto mb-4 space-y-3">
-          {aiChat.length === 0 ? (
-            <div className="text-center py-8 text-slate-400">
-              <p className="text-sm mb-2">Ask me anything about your portfolio</p>
-              <p className="text-xs">
-                "Is my portfolio too concentrated?" • "What should I review first?"
-              </p>
-            </div>
-          ) : (
-            aiChat.map((msg, idx) => (
-              <div
-                key={idx}
-                className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-              >
-                <div
-                  className={`max-w-xs px-4 py-2 rounded-lg text-sm whitespace-pre-wrap ${
-                    msg.role === 'user'
-                      ? 'bg-invest-accent text-white'
-                      : 'bg-slate-700 text-slate-100'
-                  }`}
-                >
-                  {msg.text}
-                </div>
-              </div>
-            ))
-          )}
-          {chatLoading && (
-            <div className="flex justify-start">
-              <div className="bg-slate-700 px-4 py-2 rounded-lg">
-                <div className="flex gap-1">
-                  <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0s' }}></div>
-                  <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-                  <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></div>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={userInput}
-            onChange={(e) => setUserInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleAskAI(userInput)}
-            placeholder="Ask about your portfolio..."
-            className="flex-1 bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-invest-accent"
-            disabled={chatLoading}
-          />
-          <button
-            onClick={() => handleAskAI(userInput)}
-            disabled={chatLoading || !userInput.trim()}
-            className="bg-invest-accent text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition"
-          >
-            Send
-          </button>
-        </div>
+        <p className="text-xs text-slate-400 mt-1">
+          {isEmpty
+            ? 'Add holdings to get personalized insights'
+            : 'Ask questions about your portfolio'}
+        </p>
       </div>
 
-      {/* Insights derived from real holdings */}
-      <div>
-        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-          <Zap className="w-5 h-5 text-invest-accent" />
-          Observations From Your Holdings
-        </h3>
-        {insights.length === 0 ? (
-          <p className="text-sm text-slate-400">
-            Nothing notable yet — add more holdings or check back after prices update.
-          </p>
-        ) : (
-          <div className="space-y-4">
-            {insights.map((insight) => (
-              <div
-                key={insight.id}
-                className={`p-4 rounded-lg border-l-4 ${getTypeColor(insight.type)}`}
-              >
-                <h4 className="font-semibold text-base">{insight.title}</h4>
-                <p className="text-sm text-slate-300 mt-1">{insight.description}</p>
-              </div>
-            ))}
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {messages.length === 0 && !isEmpty && (
+          <div className="text-center py-8 text-slate-400">
+            <p className="text-sm mb-4">Ask me about your portfolio:</p>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                'What are my top performers?',
+                'Should I diversify more?',
+                'Is my portfolio balanced?',
+                'What are the risks?',
+              ].map((question, i) => (
+                <button
+                  key={i}
+                  onClick={() => setInput(question)}
+                  className="text-xs p-2 rounded bg-slate-800/50 hover:bg-slate-700 transition text-left"
+                >
+                  {question}
+                </button>
+              ))}
+            </div>
           </div>
         )}
+
+        {isEmpty && (
+          <div className="text-center py-12 text-slate-400">
+            <AlertCircle className="w-8 h-8 mx-auto mb-2 opacity-50" />
+            <p className="text-sm">Add your holdings to start getting insights</p>
+          </div>
+        )}
+
+        {messages.map((msg, idx) => (
+          <div
+            key={idx}
+            className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+          >
+            <div
+              className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg text-sm ${
+                msg.role === 'user'
+                  ? 'bg-invest-accent text-white'
+                  : 'bg-slate-800 text-slate-100'
+              }`}
+            >
+              {msg.content}
+            </div>
+          </div>
+        ))}
+
+        {loading && (
+          <div className="flex justify-start">
+            <div className="bg-slate-800 px-4 py-2 rounded-lg flex items-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span className="text-sm text-slate-300">Thinking...</span>
+            </div>
+          </div>
+        )}
+
+        {error && (
+          <div className="bg-red-900/30 border border-red-800 rounded-lg p-3">
+            <p className="text-sm text-red-300">{error}</p>
+          </div>
+        )}
+
+        <div ref={messagesEndRef} />
       </div>
+
+      {/* Input */}
+      {!isEmpty && (
+        <form
+          onSubmit={handleSubmit}
+          className="border-t border-slate-700 bg-slate-900/40 p-3 flex gap-2"
+        >
+          <textarea
+            ref={textareaRef}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleSubmit(e as any);
+              }
+            }}
+            placeholder="Ask about your portfolio..."
+            className="flex-1 bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:border-invest-accent"
+            rows={1}
+            disabled={loading}
+          />
+          <button
+            type="submit"
+            disabled={loading || !input.trim()}
+            className="btn-primary p-2 flex items-center justify-center disabled:opacity-50"
+          >
+            {loading ? (
+              <Loader2 className="w-5 h-5 animate-spin" />
+            ) : (
+              <Send className="w-5 h-5" />
+            )}
+          </button>
+        </form>
+      )}
     </div>
   );
 }
