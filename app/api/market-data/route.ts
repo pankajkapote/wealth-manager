@@ -1,3 +1,6 @@
+// CRITICAL: Mark route as dynamic (uses searchParams)
+export const dynamic = 'force-dynamic';
+
 import { NextRequest, NextResponse } from 'next/server';
 
 interface CachedData {
